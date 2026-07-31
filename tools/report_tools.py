@@ -54,7 +54,7 @@ def messages_to_pdf(messages: list[dict], session_id: str) -> bytes:
     Convert session messages to a PDF file.
     Returns raw PDF bytes suitable for st.download_button.
     """
-    from fpdf import FPDF
+    from fpdf import FPDF, XPos, YPos
 
     class PDF(FPDF):
         def header(self):
@@ -81,14 +81,14 @@ def messages_to_pdf(messages: list[dict], session_id: str) -> bytes:
     # Title
     pdf.set_font("Helvetica", "B", 18)
     pdf.set_text_color(15, 23, 42)
-    pdf.cell(0, 10, "Session Export", ln=True)
+    pdf.cell(0, 10, "Session Export", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
     pdf.ln(2)
 
     # Metadata
     user_count = len([m for m in messages if m["role"] == "user"])
     pdf.set_font("Helvetica", "", 9)
     pdf.set_text_color(100, 100, 100)
-    pdf.cell(0, 6, f"Exported: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M')}   |   Exchanges: {user_count}", ln=True)
+    pdf.cell(0, 6, f"Exported: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M')}   |   Exchanges: {user_count}", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
     pdf.ln(6)
 
     for msg in messages:
@@ -110,7 +110,7 @@ def messages_to_pdf(messages: list[dict], session_id: str) -> bytes:
             pdf.set_font("Helvetica", "B", 10)
             label = f"Copilot [{intent}]" if intent else "Copilot"
 
-        pdf.cell(0, 7, _to_latin1(label), ln=True)
+        pdf.cell(0, 7, _to_latin1(label), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
 
         # Message content
         pdf.set_text_color(30, 30, 30)
@@ -118,7 +118,7 @@ def messages_to_pdf(messages: list[dict], session_id: str) -> bytes:
         for line in content.split("\n"):
             wrapped = textwrap.wrap(line, width=105) or [""]
             for wline in wrapped:
-                pdf.cell(0, 5, wline, ln=True)
+                pdf.cell(0, 5, wline, new_x=XPos.LMARGIN, new_y=YPos.NEXT)
 
         # Sources
         sources = msg.get("sources") or []
@@ -126,7 +126,7 @@ def messages_to_pdf(messages: list[dict], session_id: str) -> bytes:
             pdf.set_font("Helvetica", "I", 8)
             pdf.set_text_color(100, 100, 100)
             src_text = _to_latin1("Sources: " + ", ".join(str(s) for s in sources[:3]))
-            pdf.cell(0, 5, src_text, ln=True)
+            pdf.cell(0, 5, src_text, new_x=XPos.LMARGIN, new_y=YPos.NEXT)
 
         pdf.ln(3)
         pdf.set_draw_color(220, 220, 220)

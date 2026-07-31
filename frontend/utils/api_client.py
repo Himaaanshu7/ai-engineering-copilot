@@ -78,6 +78,44 @@ class APIClient:
         except Exception as exc:
             return {"error": str(exc)}
 
+    def generate_pdf(self, messages: list[dict], session_id: str) -> bytes | None:
+        payload = {
+            "messages": messages,
+            "session_id": session_id,
+            "report_type": "summary",
+        }
+        try:
+            with httpx.Client(timeout=60.0) as client:
+                response = client.post(f"{self.base_url}/api/v1/reports/pdf", json=payload)
+                response.raise_for_status()
+                return response.content
+        except httpx.HTTPStatusError as exc:
+            logger.error(f"[APIClient] PDF failed ({exc.response.status_code}): {exc.response.text}")
+            raise RuntimeError(f"Backend error {exc.response.status_code}: {exc.response.text}") from exc
+        except Exception as exc:
+            logger.error(f"[APIClient] PDF error: {exc}")
+            raise
+
+    def generate_report(
+        self, messages: list[dict], session_id: str, report_type: str = "summary"
+    ) -> str | None:
+        payload = {
+            "messages": messages,
+            "session_id": session_id,
+            "report_type": report_type,
+        }
+        try:
+            with httpx.Client(timeout=90.0) as client:
+                response = client.post(f"{self.base_url}/api/v1/reports/generate", json=payload)
+                response.raise_for_status()
+                return response.json()["report_markdown"]
+        except httpx.HTTPStatusError as exc:
+            logger.error(f"[APIClient] Report failed ({exc.response.status_code}): {exc.response.text}")
+            raise RuntimeError(f"Backend error {exc.response.status_code}: {exc.response.text}") from exc
+        except Exception as exc:
+            logger.error(f"[APIClient] Report error: {exc}")
+            raise
+
 
 @st.cache_resource
 def get_api_client(base_url: str = "http://localhost:8000") -> APIClient:

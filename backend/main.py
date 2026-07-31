@@ -10,7 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from loguru import logger
 
 from config.settings import settings
-from backend.api.routes import health, chat, sessions, files, knowledge
+from backend.api.routes import health, chat, sessions, files, knowledge, reports
 from database.connection import init_db
 from rag.vectorstore import collection_stats
 from rag.seed import seed as seed_knowledge_base
@@ -54,6 +54,7 @@ app.include_router(chat.router, prefix="/api/v1")
 app.include_router(sessions.router, prefix="/api/v1")
 app.include_router(files.router, prefix="/api/v1")
 app.include_router(knowledge.router, prefix="/api/v1")
+app.include_router(reports.router, prefix="/api/v1")
 
 
 if __name__ == "__main__":

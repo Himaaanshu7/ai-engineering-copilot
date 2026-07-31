@@ -1,50 +1,117 @@
+"""
+GitHub Agent — Phase 10
+
+Capabilities:
+  • Fetch live repo data: metadata, file tree, README, commits, key files
+  • Architecture analysis from file structure
+  • Code quality review from README + key files
+  • CI/CD and dependency assessment
+  • Improvement recommendations
+
+Architecture: pre-fetch all repo data → inject as LLM context → single LLM call.
+Falls back to pure LLM advice when no GitHub URL is found in the user's message.
+"""
+
+import re
+
 from langchain_core.messages import HumanMessage, SystemMessage
 from loguru import logger
 
 from agents.graph.state import AgentState
 from llm.factory import LLMFactory
+from tools.github_tools import build_repo_context, parse_repo_url
 
-_GITHUB_PROMPT = """You are a Staff Engineer specializing in code review, repository analysis, \
-and software architecture. You have deep experience reviewing codebases at scale.
+_SYSTEM_PROMPT = """You are a Staff Engineer and open-source contributor with 10+ years of experience \
+reviewing codebases at companies like Google, Netflix, and Databricks.
 
-Your expertise covers:
-- **Code quality**: readability, maintainability, SOLID principles, DRY, KISS, YAGNI
-- **Architecture analysis**: layer separation, dependency direction, coupling/cohesion
-- **Security**: OWASP Top 10, injection flaws, insecure dependencies, secrets exposure
-- **Performance**: algorithmic complexity, database query patterns, caching, async patterns
-- **Testing**: coverage, test quality, edge cases, mocking strategy
-- **Documentation**: README quality, API docs, inline comments
-- **CI/CD**: GitHub Actions, workflows, branch protection, deployment patterns
-- **Dependency management**: outdated packages, security vulnerabilities, license compatibility
+You have been given live data fetched directly from a GitHub repository. \
+Analyze it thoroughly and produce a structured architectural review.
 
-When the user provides a GitHub URL or repo name:
-- Acknowledge that you'd need the GitHub Agent tool (added in Phase 10) to fetch live data
-- Offer to analyze any code, structure, or README content they paste directly
+{context_block}
 
-When the user pastes code for review:
-1. **Summary** — overall quality assessment (1-2 sentences)
-2. **Critical issues** — bugs, security flaws, or correctness problems (must fix)
-3. **Architecture concerns** — design issues, coupling, missing abstractions
-4. **Code quality** — style, naming, readability improvements
-5. **Performance** — bottlenecks, inefficient patterns
-6. **Testing gaps** — what's missing, what's risky
-7. **Improved code** — rewritten version in a fenced code block
+Your review must cover:
 
-Be constructive but direct. Don't soften serious issues."""
+## 1. Project Summary
+What the project does, its purpose, and target users. (2-3 sentences)
+
+## 2. Architecture Analysis
+- Overall architecture pattern (MVC, layered, microservices, monolith, etc.)
+- Key components and how they interact
+- Module/package organization quality
+- Separation of concerns
+
+## 3. Tech Stack Assessment
+- Languages and frameworks used
+- Notable dependencies — are they well-chosen?
+- Any outdated or risky dependencies?
+
+## 4. Code Quality Signals
+- README quality and documentation completeness
+- Project structure clarity
+- CI/CD setup (GitHub Actions, testing pipelines)
+- Test coverage signals (test directories, test files)
+
+## 5. Strengths
+What this project does well (be specific, cite actual files/patterns you see)
+
+## 6. Issues & Improvements
+Prioritized list of concrete improvements:
+  - Critical (security, correctness)
+  - High (performance, maintainability)
+  - Medium (quality, documentation)
+  - Low (nice-to-haves)
+
+## 7. Overall Score
+Rate the project: Architecture /10, Code Quality /10, Documentation /10, CI/CD /10
+Give one-line verdict.
+
+Be specific — cite actual filenames, patterns, and code you see in the data. \
+Never give generic advice that could apply to any project."""
 
 
 async def github_agent_node(state: AgentState) -> dict:
-    logger.info(f"[GitHub Agent] Processing | input={state['user_input'][:60]}...")
+    user_input = state["user_input"]
+    logger.info(f"[GitHub Agent] Processing | input={user_input[:60]}...")
 
+    # Try to extract a GitHub repo URL from the message
+    parsed = parse_repo_url(user_input)
+
+    if parsed:
+        owner, repo = parsed
+        logger.info(f"[GitHub Agent] Repo detected | {owner}/{repo}")
+
+        context_str, sources = build_repo_context(owner, repo)
+
+        if context_str.startswith("Repository"):
+            # Not found / private
+            context_block = f"**Note:** {context_str}\n\nAnswer based on any details the user provided."
+        else:
+            context_block = (
+                "**The following data was fetched live from the GitHub API. "
+                "Base your entire review on this real data — do not make things up.**\n\n"
+                + context_str
+            )
+    else:
+        # No URL found — fall back to reviewing pasted code/description
+        logger.info("[GitHub Agent] No repo URL — reviewing pasted content")
+        sources = []
+        context_block = (
+            "**No GitHub URL was detected in the user's message.** "
+            "Review any code or architecture description they have provided directly. "
+            "If they haven't provided code, ask for a GitHub URL or code to review."
+        )
+
+    system_prompt = _SYSTEM_PROMPT.format(context_block=context_block)
     llm = LLMFactory.get_llm(temperature=0.05)
 
     response = await llm.ainvoke([
-        SystemMessage(content=_GITHUB_PROMPT),
-        HumanMessage(content=state["user_input"]),
+        SystemMessage(content=system_prompt),
+        HumanMessage(content=user_input),
     ])
 
-    logger.info("[GitHub Agent] Response generated")
+    logger.info(f"[GitHub Agent] Review complete | sources={sources}")
     return {
         "github_result": response.content,
         "final_response": response.content,
+        "sources": sources,
     }
